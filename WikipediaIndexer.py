@@ -1,4 +1,5 @@
 import os
+import os
 import json
 import numpy as np
 from onnxruntime import InferenceSession, SessionOptions, GraphOptimizationLevel
@@ -7,7 +8,7 @@ import faiss
 import time
 from tqdm import tqdm
 from codecs import encode, decode
-import re
+from Utils import *
 
 # Load the ONNX model with DirectML execution
 onnx_model_path = "D:\\Projects\\e5-small-v2\\model_opt1_QInt8.onnx"  # Replace with your ONNX model path
@@ -33,63 +34,20 @@ def computeEmbeddingsBatch(paragraphs, batch_size=32):
         ort_outputs = session.run(None, ort_inputs)
         
         # Assuming the model output is similar to the PyTorch version
-        last_hidden_state = ort_outputs[0]
-        embeddings = last_hidden_state.sum(axis=1) / batch_dict['attention_mask'].sum(axis=1)[:, None]
-        embeddings = embeddings / np.linalg.norm(embeddings, axis=1, keepdims=True)
-        all_embeddings.append(embeddings)
+        all_embeddings.append(ort_outputs[1])
     
     return np.concatenate(all_embeddings, axis=0)
-
-def split_text(text, max_length=500):
-    chunks = []
-    
-    # Split on ',', '\n', ';', and '.'
-    split_pattern = r'(?<=[,\n;.])\s*'
-    sentences = [s.strip() for s in re.split(split_pattern, text) if s.strip()]
-    
-    current_chunk = ""
-    for sentence in sentences:
-        if len(current_chunk) + len(sentence) + 1 <= max_length:
-            current_chunk += sentence + ' '
-        else:
-            if current_chunk:
-                chunks.append(current_chunk.strip())
-            current_chunk = ""
-            
-            # If the sentence itself is longer than max_length, split it
-            while len(sentence) > max_length:
-                split_index = sentence.rfind(' ', 0, max_length)
-                if split_index == -1:  # No space found, force split at max_length
-                    split_index = max_length
-                chunks.append(sentence[:split_index].strip())
-                sentence = sentence[split_index:].strip()
-            
-            current_chunk = sentence + ' '
-    
-    if current_chunk:
-        chunks.append(current_chunk.strip())
-    
-    # Final check to ensure no chunk is longer than max_length
-    final_chunks = []
-    for chunk in chunks:
-        while len(chunk) > max_length:
-            split_index = chunk.rfind(' ', 0, max_length)
-            if split_index == -1:  # No space found, force split at max_length
-                split_index = max_length
-            final_chunks.append(chunk[:split_index].strip())
-            chunk = chunk[split_index:].strip()
-        final_chunks.append(chunk)
-    
-    return final_chunks
 
 def process_json_files(root_folder, batch_size=32):
     dimension = computeEmbeddingsBatch(["Test sentence"]).shape[1]
     index = faiss.IndexFlatL2(dimension)
     
     file_paths = []
+    paragraph_indices = []  # New list to store paragraph indices
     processing_times = []
     batch_paragraphs = []
     batch_file_paths = []
+    batch_paragraph_indices = []  # New list for batch processing
 
     total_files = sum([len(files) for _, _, files in os.walk(root_folder) if 'text.json' in files])
     
@@ -108,14 +66,17 @@ def process_json_files(root_folder, batch_size=32):
                         
                         batch_paragraphs.extend(chunks)
                         batch_file_paths.extend([file_path] * len(chunks))
+                        batch_paragraph_indices.extend(range(len(chunks)))  # Add paragraph indices
                         
                         if len(batch_paragraphs) >= batch_size:
                             embeddings = computeEmbeddingsBatch(batch_paragraphs, batch_size)
                             index.add(embeddings)
                             file_paths.extend(batch_file_paths)
+                            paragraph_indices.extend(batch_paragraph_indices)  # Add to main list
                             
                             batch_paragraphs = []
                             batch_file_paths = []
+                            batch_paragraph_indices = []
                     
                     end_time = time.time()
                     processing_time = end_time - start_time
@@ -129,18 +90,19 @@ def process_json_files(root_folder, batch_size=32):
         embeddings = computeEmbeddingsBatch(batch_paragraphs, batch_size)
         index.add(embeddings)
         file_paths.extend(batch_file_paths)
+        paragraph_indices.extend(batch_paragraph_indices)
 
-    return index, file_paths, processing_times
+    return index, file_paths, paragraph_indices, processing_times
 
 # Usage
 root_folder = "archive"
 batch_size = 64  # You can adjust this based on your GPU memory
-index, file_paths, processing_times = process_json_files(root_folder, batch_size)
+index, file_paths, paragraph_indices, processing_times = process_json_files(root_folder, batch_size)
 
-# Save the index and file paths
+# Save the index, file paths, and paragraph indices
 faiss.write_index(index, "embeddings_onnx.index")
-with open("file_paths_onnx.json", "w") as f:
-    json.dump(file_paths, f)
+with open("file_paths_and_indices_onnx.json", "w") as f:
+    json.dump({"file_paths": file_paths, "paragraph_indices": paragraph_indices}, f)
 
 # Print statistics
 print("\nProcessing Statistics:")

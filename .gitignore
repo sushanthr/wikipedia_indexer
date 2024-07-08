@@ -1,3 +1,6 @@
 archive/
 embeddings.index
 file_paths.json
+embeddings_onnx.index
+__pycache__/Utils.cpython-312.pyc
+file_paths_and_indices_onnx.json
