@@ -1,5 +1,5 @@
 Wikipedia indexer uses an 8 bit quantized version of https://huggingface.co/intfloat/e5-small-v2 to generate embeddings and search a small wikipedia dataset.
-The data set used here is https://www.kaggle.com/datasets/jacksoncrow/wikipedia-multimodal-dataset-of-good-articles, consisting of 36,476.
+The data set used here is https://www.kaggle.com/datasets/jacksoncrow/wikipedia-multimodal-dataset-of-good-articles, consisting of 36,476 articles.
 
 ## Usage
 Download the archive from https://www.kaggle.com/datasets/jacksoncrow/wikipedia-multimodal-dataset-of-good-articles, and unzip it to a sub-folder archive.
